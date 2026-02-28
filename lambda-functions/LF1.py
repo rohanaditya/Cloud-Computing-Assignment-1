@@ -28,17 +28,43 @@ def handle_thankyou(event):
 
 def handle_dining_suggestions(event):
     slots = event['sessionState']['intent']['slots']
-    
     location = get_slot(slots, 'Location')
     cuisine = get_slot(slots, 'Cuisine')
     date = get_slot(slots, 'Date')
     dining_time = get_slot(slots, 'DiningTime')
     num_people = get_slot(slots, 'NumberOfPeople')
     email = get_slot(slots, 'Email')
-    
+
+    if location and location.lower() not in ['new york', 'ny', 'new york city', 'nyc']:
+        return elicit_slot(event, 'Location', 'Sorry, we only serve New York at the moment. Please enter New York as your location.')
+
+    if date:
+        from datetime import datetime
+        date_obj = datetime.strptime(date, '%Y-%m-%d').date()
+        today = datetime.now().date()
+        if date_obj <= today:
+            slots['Date'] = None
+            return {
+                'sessionState': {
+                    'dialogAction': {
+                        'type': 'ElicitSlot',
+                        'slotToElicit': 'Date'
+                    },
+                    'intent': {
+                        'name': event['sessionState']['intent']['name'],
+                        'slots': slots,
+                        'state': 'InProgress'
+                    }
+                },
+                'messages': [{
+                    'contentType': 'PlainText',
+                    'content': 'Please enter a present or future date, not a date in the past.'
+                }]
+            }
+
     if not all([location, cuisine, date, dining_time, num_people, email]):
         return delegate(event)
-    
+
     message = {
         'location': location,
         'cuisine': cuisine,
@@ -47,13 +73,11 @@ def handle_dining_suggestions(event):
         'numberOfPeople': num_people,
         'email': email
     }
-    
     sqs.send_message(
         QueueUrl=QUEUE_URL,
         MessageBody=json.dumps(message)
     )
-    
-    return close(event, 
+    return close(event,
         f"Got it! I will find {cuisine} restaurants in {location} for {num_people} people at {dining_time}. "
         f"You are all set. I will send the suggestions to {email}. Thank you!")
 
@@ -85,4 +109,23 @@ def close(event, message):
                 "content": message
             }
         ]
+    }
+
+def elicit_slot(event, slot_to_elicit, message):
+    return {
+        'sessionState': {
+            'dialogAction': {
+                'type': 'ElicitSlot',
+                'slotToElicit': slot_to_elicit
+            },
+            'intent': {
+                'name': event['sessionState']['intent']['name'],
+                'slots': event['sessionState']['intent']['slots'],
+                'state': 'InProgress'
+            }
+        },
+        'messages': [{
+            'contentType': 'PlainText',
+            'content': message
+        }]
     }
